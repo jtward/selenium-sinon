@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<body>
+    <button id="button">Click me</button>
+    <span id="result"></span>
+    <script src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
+    <script>
+        $('#button').on('click', function() {
+            $.get('foo.com', function(data) {
+                $('#result').html(data);
+            });
+        });
+    </script>
+</body>

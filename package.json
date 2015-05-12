@@ -1,0 +1,28 @@
+{
+  "name": "selenium-sinon",
+  "version": "0.0.0",
+  "description": "POC for selenium tests with mocha and webdriver.io using sinon-stubbed XHRs",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "devDependencies": {
+    "mocha": "^2.2.4",
+    "chai": "^2.3.0",
+    "node-static": "^0.7.6",
+    "webdriverio": "^2.4.5"
+  },
+  "scripts": {
+    "test": "mocha"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jtward/selenium-sinon.git"
+  },
+  "author": "James Ward",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/jtward/selenium-sinon/issues"
+  },
+  "homepage": "https://github.com/jtward/selenium-sinon#readme"
+}
