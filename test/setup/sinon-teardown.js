@@ -1,1 +1,0 @@
-window._sinon_server.restore();

@@ -1,15 +1,13 @@
 var fs = require('fs');
 var expect = require('chai').expect;
 var webdriverio = require('webdriverio');
+var _ = require('lodash');
 
-var sinon_server = fs.readFileSync('setup/sinon-server.js', 'utf8');
-var sinon_setup = fs.readFileSync('setup/sinon-setup.js', 'utf8');
-sinon_setup = sinon_server + sinon_setup;
-var sinon_teardown = fs.readFileSync('setup/sinon-teardown.js', 'utf8');
+fauxJax_setup = fs.readFileSync('setup/fauxJax-setup.js', 'utf8');
 
 var options = {
     desiredCapabilities: {
-        browserName: 'chrome'
+        browserName: 'safari'
     }
 };
 
@@ -26,7 +24,7 @@ var promisify = function(resolve, reject) {
 // return a function that executes an action on the browser
 // the returned function returns a promise, which is fulfilled
 // with the result of the action when it completes.
-var chainedAction = function(method) {
+var action = function(method) {
     var args = Array.prototype.slice.call(arguments, 1);
     return function() {
         return new Promise(function(resolve, reject) {
@@ -36,7 +34,7 @@ var chainedAction = function(method) {
     };
 };
 
-// doAction is like chainedAction, but does the action immediately
+// doAction is like action, but does the action immediately
 // instead of returning a function that does the action. returns a
 // promise, which is fulfilled with the result of the action when
 // it completes.
@@ -48,33 +46,108 @@ var doAction = function(method) {
     });
 };
 
+var fakeServer = (function() {
+    var isResponding = false;
+
+    var registeredResponses = [];
+
+    var respondWith = function(method, url, response) {
+        registeredResponses.push({
+            method: method,
+            url: url,
+            response: response
+        });
+    };
+
+    var reset = function() {
+        registeredResponses.length = 0;
+        isResponding = false;
+    };
+
+    var getRequests = action('execute', function() {
+        return window.fakeServer.getRequests();
+    });
+
+    var responses = function(requests) {
+        return requests.map(function(request) {
+            var requestParams = request.request;
+            var match;
+            
+            var response = _.find(registeredResponses, function(response) {
+                if (response.method === requestParams.method) {
+                    match = requestParams.url.match(response.url);
+                    return match;
+                }
+            });
+
+            if (response) {
+                var args = match.slice(1);
+                args.unshift(requestParams);
+                
+                response = response.response;
+                if (typeof response === 'function') {
+                    response = response.apply(response, args);
+                }
+                
+                return {
+                    id: request.id,
+                    response: response
+                };
+            }
+            else {
+                console.log('no fake server response for request: ', requestParams);
+            }
+        });
+    };
+
+    var respond = function(requests) {
+        return doAction('execute', function(responses) {
+            window.fakeServer.respond(responses);
+        }, responses(requests));
+    };
+
+    var sendResponses = function(result) {
+        var requests = JSON.parse(result.value);
+        if (requests.length) {
+            return respond(requests);
+        }
+        else {
+            return Promise.resolve();
+        }
+    };
+
+    var maybeStop = function() {
+        return (isResponding ? Promise.resolve : Promise.reject).call(Promise);
+    };
+
+    var startResponding = function() {
+        isResponding = true;
+        (function serve() {
+            return maybeStop()
+            .then(getRequests)
+            .then(sendResponses)
+            .then(serve)
+        }());
+    };
+
+    return {
+        respondWith: respondWith,
+        startResponding: startResponding,
+        reset: reset
+    };
+}());
+
 // sets up the browser ready for a test by loading the given url
 // and injecting sinon. returns a promise which is resolved when
 // the setup is complete
 var setup = function(url) {
     return new Promise(function(resolve, reject) {
         browser.url(url, promisify(function() {
-            browser.execute(sinon_setup, promisify(resolve, reject));
+            browser.execute(fauxJax_setup, promisify(function() {
+                fakeServer.startResponding();
+                resolve();
+            }, reject));
         }, reject));
-    });
-};
-
-// proxies calls to the fake sinon server running in the browser.
-// implements the full sinon.respondWith API
-// functions passed as arguments will stringified and run in the
-// target browser so variables in enclosing scopes will not be available.
-var respondWith = function() {
-    var args = Array.prototype.slice.call(arguments);
-    args = args.map(function(arg) {
-        return (typeof arg === 'string') ?
-            ('"' + arg + '"') :
-            arg.toString();
-    }).join(', ');
-
-    var jsString = 'window._sinon_server.respondWith(' + args + ');';
-
-    return new Promise(function(resolve, reject) {
-        browser.execute(jsString, promisify(resolve, reject));
     });
 };
 
@@ -82,7 +155,7 @@ describe('client', function(done) {
     // we need a long timeout to allow for browser startup
     // and page load, but short enough not to wait too long for
     // broken tests. 10 seconds is probably ok
-    this.timeout(10000);
+    this.timeout(30000);
 
     // we create a browser instance once, before all tests
     before(function(done) {
@@ -98,38 +171,20 @@ describe('client', function(done) {
     // execute teardown after each test
     // each test is expected to call setup itself
     afterEach(function(done) {
-        browser.execute(sinon_teardown, done);
+        fakeServer.reset();
+        browser.execute("fauxJax.restore();", done);
     });
 
     it('does a thing', function(done) {
-        setup('http://localhost:8080/index.html')
-        .then(function() {
-            return respondWith('foo');
-        })
-        .then(chainedAction('click', '#button'))
-        .then(chainedAction('getText', '#result'))
-        .then(function(text) {
-            expect(text).to.equal('foo');
-            done();
-        });
-    });
+        fakeServer.respondWith('GET', /.*/, [200, {}, '{"foo":"bar"}']);
 
-    it('does another thing', function(done) {
         setup('http://localhost:8080/index.html')
-        .then(function() {
-            return Promise.all([
-                respondWith('bar')
-                // ,...
-            ]);
-        })
-        .then(chainedAction('click', '#button'))
-        .then(function(result) {
-            // maybe do something with result
-            return doAction('getText', '#result');
-        })
+        .then(action('click', '#button'))
+        .then(action('getText', '#result'))
         .then(function(text) {
-            expect(text).to.equal('bar');
-            done();
-        });
+            expect(text).to.equal('{"foo":"bar"}');
+        })
+        .then(done)
+        .catch(done);
     });
 });

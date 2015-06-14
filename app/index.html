@@ -1,13 +1,36 @@
 <!DOCTYPE html>
+<head>
+    <script src="./faux-jax.js"></script>
+</head>
 <body>
     <button id="button">Click me</button>
-    <span id="result"></span>
+    <span id="result"></span><br />
+    <span id="console"></span>
     <script src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
     <script>
         $('#button').on('click', function() {
             $.get('foo.com', function(data) {
+                if (data === '\n') {
+                    data = 'newline';
+                }
+                else if (data === '\r') {
+                    data = 'cr';
+                }
+                else if (data === '\f') {
+                    data = 'lf';
+                }
+                else if (data === '\v') {
+                    data = 'vtab';
+                }
+                else if (data === '\t') {
+                    data = 'tab';
+                }
+                else if (data === '\u2028') {
+                    data = '2028';
+                }
                 $('#result').html(data);
             });
         });
+
     </script>
 </body>
